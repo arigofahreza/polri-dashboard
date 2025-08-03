@@ -56,8 +56,8 @@ async def top_contributors(
     return await get_top_contributors(limit=limit, category=category)
 
 @router.get("/trend/contributors")
-async def trend_contributors_chart():
-    return await get_top_contributors_trend()
+async def trend_contributors_chart(category: Optional[str] = Query(default=None)):
+    return await get_top_contributors_trend(category)
 
 @router.get("/online-news")
 async def online_news_count():

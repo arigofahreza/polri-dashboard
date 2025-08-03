@@ -155,10 +155,13 @@ async def get_wordcloud_data(limit: int = 500, category: str | None = None):
 async def get_top_contributors(limit: int = 5, category: Optional[str] = None):
     query = (
         select(
-            investigation_notes.c.phone_number.label("phone_number"),
+            users.c.nama.label('name'),
             func.count(investigation_notes.c.id).label("total")
         )
-        .group_by(investigation_notes.c.phone_number)
+        .select_from(
+            investigation_notes.join(users, investigation_notes.c.phone_number == users.c.no_telepon)
+        )
+        .group_by(users.c.nama)
         .order_by(desc(func.count(investigation_notes.c.id)))
         .limit(limit)
     )
@@ -169,7 +172,7 @@ async def get_top_contributors(limit: int = 5, category: Optional[str] = None):
     return await database.fetch_all(query)
 
 
-async def get_top_contributors_trend():
+async def get_top_contributors_trend(category: Optional[str] = None):
     top_contributors_subq = (
         select(investigation_notes.c.phone_number)
         .group_by(investigation_notes.c.phone_number)
@@ -181,16 +184,20 @@ async def get_top_contributors_trend():
     daily_data_query = (
         select(
             investigation_notes.c.phone_number,
+            investigation_notes.c.category,
             cast(investigation_notes.c.created_at, Date).label("date"),
             func.count().label("count")
         )
         .where(investigation_notes.c.phone_number.in_(select(top_contributors_subq.c.phone_number)))
         .group_by(
             investigation_notes.c.phone_number,
+            investigation_notes.c.category,
             cast(investigation_notes.c.created_at, Date)
         )
         .order_by("date")
     )
+    if category:
+        daily_data_query = daily_data_query.where(investigation_notes.c.category == category)
 
     return await database.fetch_all(daily_data_query)
 
