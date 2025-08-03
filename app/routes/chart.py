@@ -65,12 +65,16 @@ async def online_news_count():
     return results
 
 @router.get("/online-news-table")
-async def table_chart():
-    return await get_table_chart()
+async def table_chart(
+    limit: int = 5,
+    category: Optional[str] = Query(default=None)
+):
+    return await get_table_chart(limit=limit, category=category)
 
 @router.get("/mitigation-table")
-async def mitigation_table_chart(category: Optional[str] = Query(None)):
-    return await get_mitigation_table(category)
+async def mitigation_table_chart(limit: int = 5,
+                                 category: Optional[str] = Query(None)):
+    return await get_mitigation_table(category, limit)
 
 @router.get("/office-distribution")
 async def office_distribution(

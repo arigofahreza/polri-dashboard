@@ -102,7 +102,7 @@ async def get_latest_investigation(limit: int = 1000, category: str | None = Non
         select(
             investigation_notes.c.what,
             investigation_notes.c.category,
-            investigation_notes.c.created_at,
+            investigation_notes.c.when,
             investigation_notes.c.id
         )
         .distinct(investigation_notes.c.what)
@@ -114,10 +114,10 @@ async def get_latest_investigation(limit: int = 1000, category: str | None = Non
         select(
             subquery.c.what,
             subquery.c.category,
-            subquery.c.created_at
+            subquery.c.when
         )
         .order_by(subquery.c.id.desc())
-        .limit(5)
+        .limit(limit)
     )
 
     if category:
@@ -127,7 +127,7 @@ async def get_latest_investigation(limit: int = 1000, category: str | None = Non
         select(
             query.c.what,
             query.c.category,
-            query.c.created_at
+            query.c.when
         )
         .limit(limit)
     )

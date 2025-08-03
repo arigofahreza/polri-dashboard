@@ -1,5 +1,7 @@
 from io import BytesIO
 
+from docx.shared import Mm
+from docxtpl import DocxTemplate, InlineImage
 from sqlalchemy import text, select, func, and_, desc, cast, Date
 from sqlalchemy.orm import aliased
 
@@ -9,11 +11,13 @@ from app.models.investigation import investigation_notes
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from app.models.mitigation import mitigation_suggestion
 from app.models.office import offices
+from app.models.online_news import online_news
 from app.models.user import users
 
 
-async def get_report_data(category: str, start_date: str, end_date: str):
+async def get_report_data(category: str, start_date: str, end_date: str, title: str = None):
     query = select(investigation_notes).where(
         and_(
             investigation_notes.c.category == category,
@@ -22,8 +26,8 @@ async def get_report_data(category: str, start_date: str, end_date: str):
     )
     investigation_data = await database.fetch_all(query)
 
-    df = pd.DataFrame(investigation_data)
-
+    df = pd.DataFrame([dict(row) for row in investigation_data])
+    count_df = df.shape[0]
     plot_df = df.groupby('when').size().reset_index(name='jumlah')
 
     fig, ax = plt.subplots()
@@ -55,7 +59,8 @@ async def get_report_data(category: str, start_date: str, end_date: str):
         messages=[
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight trend insiden berdasarkan data yang diberikan."},
-            {"role": "user", "content": f"Berikan deskripsi yang menjelaskan dari trend data berikut:\n{md_investigation_data}"}
+            {"role": "user",
+             "content": f"Berikan deskripsi yang menjelaskan dari trend data berikut:\n{md_investigation_data}"}
         ],
         temperature=0.5
     )
@@ -75,7 +80,19 @@ async def get_report_data(category: str, start_date: str, end_date: str):
         .group_by(offices.c.nama)
     )
     office_count = await database.fetch_all(query_office_count)
-    df_office = pd.DataFrame(office_count)
+    df_office = pd.DataFrame([dict(row) for row in office_count])
+
+    md_office = df_office.to_markdown(index=False)
+    response_office = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system",
+             "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
+            {"role": "user", "content": f"Berikan deskripsi yang menjelaskan dari data berikut:\n{md_office}"}
+        ],
+        temperature=0.5
+    )
+
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.bar(df_office["nama"], df_office["count"], color='skyblue')
     ax.set_title("Jumlah Laporan per Lokasi")
@@ -103,7 +120,7 @@ async def get_report_data(category: str, start_date: str, end_date: str):
     contributor_query = contributor_query.where(investigation_notes.c.category == category)
     contributor_count = await database.fetch_all(contributor_query)
 
-    contributor_df = pd.DataFrame(contributor_count)
+    contributor_df = pd.DataFrame([dict(row) for row in contributor_count])
     md_contributor_df = contributor_df.to_markdown(index=False)
 
     response_contributor = client.chat.completions.create(
@@ -157,8 +174,109 @@ async def get_report_data(category: str, start_date: str, end_date: str):
     daily_data_query = daily_data_query.where(investigation_notes.c.category == category)
     trend_contributor_data = await database.fetch_all(daily_data_query)
 
+    trend_contributor_df = pd.DataFrame([dict(row) for row in trend_contributor_data])
+    md_trend_contributor_df = trend_contributor_df.to_markdown(index=False)
+
+    response_trend_contributor = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system",
+             "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
+            {"role": "user",
+             "content": f"Berikan deskripsi yang menjelaskan trend dari data berikut:\n{md_trend_contributor_df}"}
+        ],
+        temperature=0.5
+    )
+
+    trend_contributor_df["date"] = pd.to_datetime(trend_contributor_df["date"])
+
+    # Step 2: Create line chart
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    # Plot line for each person
+    for name, group in trend_contributor_df.groupby("name"):
+        group_sorted = group.sort_values("date")
+        ax.plot(group_sorted["date"], group_sorted["count"], marker="o", label=name)
+
+    # Set labels and title
+    ax.set_title("Tren Jumlah Laporan per Nama")
+    ax.set_xlabel("Tanggal")
+    ax.set_ylabel("Jumlah Laporan")
+    ax.legend()
+    ax.grid(True)
+    plt.xticks(rotation=30)
+    plt.tight_layout()
+
+    trend_contrbutor_img_stream = BytesIO()
+    plt.savefig(trend_contrbutor_img_stream, format='png')
+    trend_contrbutor_img_stream.seek(0)
+
+    query_online_news = select(online_news).where(
+        and_(
+            online_news.c.category == category,
+            online_news.c.when.between(start_date, end_date)
+        )
+    )
+    online_news_data = await database.fetch_all(query_online_news)
+
+    online_news_df = pd.DataFrame([dict(row) for row in online_news_data])
+    md_online_news = online_news_df.to_markdown(index=False)
+
+    count_online_news_df = online_news_df.shape[0]
+    response_online_news = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system",
+             "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
+            {"role": "user",
+             "content": f"Berikan ringkasan dari data berikut:\n{md_online_news}"}
+        ],
+        temperature=0.5
+    )
+
+    query_mitigation = select(mitigation_suggestion).where(
+        and_(
+            mitigation_suggestion.c.category == category,
+            mitigation_suggestion.c.when.between(start_date, end_date)
+        )
+    )
+    mitigation_data = await database.fetch_all(query_mitigation)
+    df_mitigation_data = pd.DataFrame([dict(row) for row in mitigation_data])
+    md_mitigation = df_mitigation_data.to_markdown(index=False)
+    response_mitigation = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system",
+             "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
+            {"role": "user",
+             "content": f"Berikan ringkasan dari data berikut:\n{md_mitigation}"}
+        ],
+        temperature=0.5
+    )
+
+    doc = DocxTemplate("./template/template-report.docx")
+    context = {
+        'title': title if title else 'Laporan',
+        'kategori': category,
+        'generated_date_start': start_date,
+        'generated_date_end': end_date,
+        'total_report': count_df,
+        'chart_tren_laporan': InlineImage(doc, investigation_img_stream, width=Mm(120)),
+        'deskripsi_tren_laporan': response_trend.choices[0].message.content,
+        'chart_laporan_lokasi': InlineImage(doc, office_img_stream, width=Mm(120)),
+        'deskripsi_laporan_perlokasi': response_office.choices[0].message.content,
+        'rangkuman_laporan': response_summary.choices[0].message.content,
+        'chart_top_kontributor': InlineImage(doc, contributor_img_stream, width=Mm(120)),
+        'deskripsi_top_kontributor': response_contributor.choices[0].message.content,
+        'chart_tren_kontributor': InlineImage(doc, trend_contrbutor_img_stream, width=Mm(120)),
+        'deskripsi_tren_kontributor': response_trend_contributor.choices[0].message.content,
+        'total_online_news': count_online_news_df,
+        'rangkuman_online_news': response_online_news.choices[0].message.content,
+        'mitigasi_saran_online_news': response_mitigation.choices[0].message.content
+    }
+    doc.render(context)
+    doc.save(f"./report/report-{category}-{start_date}-{end_date}.docx")
 
 
-
-
-
+async def download_report(id: str):
+    pass

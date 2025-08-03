@@ -6,3 +6,7 @@ python-dotenv
 passlib[bcrypt]
 databases
 psycopg2-binary
+pandas
+matplotlib
+tabulate
+openai
