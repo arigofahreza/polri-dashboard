@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from sqlalchemy import text, select, func, and_
+from sqlalchemy import text, select, func, and_, desc, cast, Date
 from sqlalchemy.orm import aliased
 
 from app.database import database
@@ -44,7 +44,7 @@ async def get_report_data(category: str, start_date: str, end_date: str):
         model="gpt-4.1",
         messages=[
             {"role": "system",
-             "content": "Kamu adalah analis intelijen yang memberikan ringkasan insiden berdasarkan data yang diberikan."},
+             "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
             {"role": "user", "content": f"Berikan ringkasan dari data berikut:\n{md_investigation_data}"}
         ],
         temperature=0.5
@@ -54,7 +54,7 @@ async def get_report_data(category: str, start_date: str, end_date: str):
         model="gpt-4.1",
         messages=[
             {"role": "system",
-             "content": "Kamu adalah analis intelijen yang memberikan deskripsi trend insiden berdasarkan data yang diberikan."},
+             "content": "Kamu adalah analis intelijen yang memberikan insight trend insiden berdasarkan data yang diberikan."},
             {"role": "user", "content": f"Berikan deskripsi yang menjelaskan dari trend data berikut:\n{md_investigation_data}"}
         ],
         temperature=0.5
@@ -74,10 +74,10 @@ async def get_report_data(category: str, start_date: str, end_date: str):
         )
         .group_by(offices.c.nama)
     )
-    office_count = await database.fetch_all(query)
+    office_count = await database.fetch_all(query_office_count)
     df_office = pd.DataFrame(office_count)
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.bar(df["nama"], df["count"], color='skyblue')
+    ax.bar(df_office["nama"], df_office["count"], color='skyblue')
     ax.set_title("Jumlah Laporan per Lokasi")
     ax.set_xlabel("Lokasi")
     ax.set_ylabel("Jumlah")
@@ -87,6 +87,76 @@ async def get_report_data(category: str, start_date: str, end_date: str):
     office_img_stream = BytesIO()
     plt.savefig(office_img_stream, format='png')
     office_img_stream.seek(0)
+
+    contributor_query = (
+        select(
+            users.c.nama.label('name'),
+            func.count(investigation_notes.c.id).label("total")
+        )
+        .select_from(
+            investigation_notes.join(users, investigation_notes.c.phone_number == users.c.no_telepon)
+        )
+        .group_by(users.c.nama)
+        .order_by(desc(func.count(investigation_notes.c.id)))
+        .limit(5)
+    )
+    contributor_query = contributor_query.where(investigation_notes.c.category == category)
+    contributor_count = await database.fetch_all(contributor_query)
+
+    contributor_df = pd.DataFrame(contributor_count)
+    md_contributor_df = contributor_df.to_markdown(index=False)
+
+    response_contributor = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system",
+             "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
+            {"role": "user", "content": f"Berikan deskripsi yang menjelaskan dari data berikut:\n{md_contributor_df}"}
+        ],
+        temperature=0.5
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.bar(contributor_df["name"], contributor_df["total"], color='lightcoral')
+
+    # Labels and titles
+    ax.set_title("Jumlah Laporan per Contributor", fontsize=12)
+    ax.set_xlabel("Nama")
+    ax.set_ylabel("Total")
+    plt.xticks(rotation=30, ha='right')
+    plt.tight_layout()
+
+    # Step 3: Save as binary image
+    contributor_img_stream = BytesIO()
+    plt.savefig(contributor_img_stream, format='png')
+    contributor_img_stream.seek(0)
+
+    top_contributors_subq = (
+        select(investigation_notes.c.phone_number)
+        .group_by(investigation_notes.c.phone_number)
+        .order_by(func.count().desc())
+        .limit(5)
+        .subquery()
+    )
+
+    daily_data_query = (
+        select(
+            investigation_notes.c.phone_number,
+            investigation_notes.c.category,
+            cast(investigation_notes.c.created_at, Date).label("date"),
+            func.count().label("count")
+        )
+        .where(investigation_notes.c.phone_number.in_(select(top_contributors_subq.c.phone_number)))
+        .group_by(
+            investigation_notes.c.phone_number,
+            investigation_notes.c.category,
+            cast(investigation_notes.c.created_at, Date)
+        )
+        .order_by("date")
+    )
+    daily_data_query = daily_data_query.where(investigation_notes.c.category == category)
+    trend_contributor_data = await database.fetch_all(daily_data_query)
+
 
 
 

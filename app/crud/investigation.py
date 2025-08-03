@@ -183,14 +183,17 @@ async def get_top_contributors_trend(category: Optional[str] = None):
 
     daily_data_query = (
         select(
-            investigation_notes.c.phone_number,
+            users.c.nama.label('name'),
             investigation_notes.c.category,
             cast(investigation_notes.c.created_at, Date).label("date"),
             func.count().label("count")
         )
+        .select_from(
+            investigation_notes.join(users, investigation_notes.c.phone_number == users.c.no_telepon)
+        )
         .where(investigation_notes.c.phone_number.in_(select(top_contributors_subq.c.phone_number)))
         .group_by(
-            investigation_notes.c.phone_number,
+            users.c.nama,
             investigation_notes.c.category,
             cast(investigation_notes.c.created_at, Date)
         )
