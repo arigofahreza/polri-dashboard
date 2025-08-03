@@ -18,11 +18,19 @@ async def get_category_counts(category: str = None):
         ).where(investigation_notes.c.category == category).group_by(investigation_notes.c.category)
     else:
         query = select(
-            investigation_notes.c.category,
             func.count().label("count")
-        ).group_by(investigation_notes.c.category)
+        ).select_from(investigation_notes)
 
     return await database.fetch_all(query)
+
+
+async def get_category_group_counts():
+    query = select(
+        investigation_notes.c.category,
+        func.count().label("count")
+    ).group_by(investigation_notes.c.category)
+    return await database.fetch_all(query)
+
 
 async def get_daily_report(limit: int = 500, category: str = None):
     base_query = select(
@@ -37,6 +45,7 @@ async def get_daily_report(limit: int = 500, category: str = None):
     base_query = base_query.order_by(func.count().desc()).limit(limit)
 
     return await database.fetch_all(base_query)
+
 
 async def get_heatmap_data(limit: int = 10000, category: str = None):
     day = func.extract('day', cast(investigation_notes.c.when, Date)).label("hari")
@@ -53,6 +62,7 @@ async def get_heatmap_data(limit: int = 10000, category: str = None):
     query = query.limit(limit)
 
     return await database.fetch_all(query)
+
 
 async def get_category_trend(limit: int = 30, top_categories: int = 25):
     # Subquery untuk top categories
@@ -85,6 +95,7 @@ async def get_category_trend(limit: int = 30, top_categories: int = 25):
     )
 
     return await database.fetch_all(query)
+
 
 async def get_latest_investigation(limit: int = 1000, category: str | None = None):
     subquery = (
@@ -123,6 +134,7 @@ async def get_latest_investigation(limit: int = 1000, category: str | None = Non
 
     return await database.fetch_all(final_query)
 
+
 async def get_wordcloud_data(limit: int = 500, category: str | None = None):
     query = (
         select(
@@ -139,6 +151,7 @@ async def get_wordcloud_data(limit: int = 500, category: str | None = None):
 
     return await database.fetch_all(query)
 
+
 async def get_top_contributors(limit: int = 5, category: Optional[str] = None):
     query = (
         select(
@@ -154,6 +167,7 @@ async def get_top_contributors(limit: int = 5, category: Optional[str] = None):
         query = query.where(investigation_notes.c.category == category)
 
     return await database.fetch_all(query)
+
 
 async def get_top_contributors_trend():
     top_contributors_subq = (

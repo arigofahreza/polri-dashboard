@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from app.crud.investigation import get_category_counts, get_daily_report, get_heatmap_data, get_category_trend, \
     get_latest_investigation, get_wordcloud_data, get_top_contributors, get_top_contributors_trend, \
-    get_office_distribution
+    get_office_distribution, get_category_group_counts
 from app.crud.mitigations import get_mitigation_table
 from app.crud.online_news import get_online_news_count, get_table_chart
 
@@ -12,6 +12,11 @@ router = APIRouter(prefix="/chart", tags=['chart'])
 @router.get("/category")
 async def category_chart(category: Optional[str] = Query(default=None)):
     results = await get_category_counts(category)
+    return results
+
+@router.get("/group-category")
+async def group_category_chart():
+    results = await get_category_group_counts()
     return results
 
 @router.get("/daily")
