@@ -325,7 +325,7 @@ async def get_all_document(page: int = 1, limit: int = 10):
 
     query = (
         select(report_metadata)
-        .order_by(desc(report_metadata.c.id))
+        .order_by(desc(report_metadata.c.generated_at))
         .limit(limit)
         .offset(offset)
     )
