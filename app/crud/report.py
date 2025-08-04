@@ -1,8 +1,9 @@
+import datetime
 from io import BytesIO
-
+from fastapi.responses import FileResponse
 from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage
-from sqlalchemy import text, select, func, and_, desc, cast, Date
+from sqlalchemy import text, select, func, and_, desc, cast, Date, insert
 from sqlalchemy.orm import aliased
 
 from app.database import database
@@ -14,6 +15,7 @@ import matplotlib.pyplot as plt
 from app.models.mitigation import mitigation_suggestion
 from app.models.office import offices
 from app.models.online_news import online_news
+from app.models.report import report_metadata
 from app.models.user import users
 
 
@@ -49,7 +51,8 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
         messages=[
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
-            {"role": "user", "content": f"Berikan ringkasan dari data berikut:\n{md_investigation_data}"}
+            {"role": "user",
+             "content": f"Berikan ringkasan dari data berikut:\n{md_investigation_data}. buat dalam bentuk 1 paragraf text"}
         ],
         temperature=0.5
     )
@@ -60,7 +63,7 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight trend insiden berdasarkan data yang diberikan."},
             {"role": "user",
-             "content": f"Berikan deskripsi yang menjelaskan dari trend data berikut:\n{md_investigation_data}"}
+             "content": f"Berikan deskripsi yang menjelaskan dari trend data berikut:\n{md_investigation_data}. buat dalam bentuk 1 paragraf text"}
         ],
         temperature=0.5
     )
@@ -88,7 +91,8 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
         messages=[
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
-            {"role": "user", "content": f"Berikan deskripsi yang menjelaskan dari data berikut:\n{md_office}"}
+            {"role": "user",
+             "content": f"Berikan deskripsi yang menjelaskan dari data berikut:\n{md_office}. buat dalam bentuk 1 paragraf text"}
         ],
         temperature=0.5
     )
@@ -128,7 +132,8 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
         messages=[
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
-            {"role": "user", "content": f"Berikan deskripsi yang menjelaskan dari data berikut:\n{md_contributor_df}"}
+            {"role": "user",
+             "content": f"Berikan deskripsi yang menjelaskan dari data berikut:\n{md_contributor_df}. buat dalam bentuk 1 paragraf text"}
         ],
         temperature=0.5
     )
@@ -158,14 +163,17 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
 
     daily_data_query = (
         select(
-            investigation_notes.c.phone_number,
+            users.c.nama.label('name'),
             investigation_notes.c.category,
             cast(investigation_notes.c.created_at, Date).label("date"),
             func.count().label("count")
         )
+        .select_from(
+            investigation_notes.join(users, investigation_notes.c.phone_number == users.c.no_telepon)
+        )
         .where(investigation_notes.c.phone_number.in_(select(top_contributors_subq.c.phone_number)))
         .group_by(
-            investigation_notes.c.phone_number,
+            users.c.nama,
             investigation_notes.c.category,
             cast(investigation_notes.c.created_at, Date)
         )
@@ -183,7 +191,7 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
             {"role": "user",
-             "content": f"Berikan deskripsi yang menjelaskan trend dari data berikut:\n{md_trend_contributor_df}"}
+             "content": f"Berikan deskripsi yang menjelaskan trend dari data berikut:\n{md_trend_contributor_df}. buat dalam bentuk 1 paragraf text"}
         ],
         temperature=0.5
     )
@@ -229,7 +237,7 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
             {"role": "user",
-             "content": f"Berikan ringkasan dari data berikut:\n{md_online_news}"}
+             "content": f"Berikan ringkasan dari data berikut:\n{md_online_news}. buat dalam bentuk 1 paragraf text"}
         ],
         temperature=0.5
     )
@@ -249,34 +257,64 @@ async def get_report_data(category: str, start_date: str, end_date: str, title: 
             {"role": "system",
              "content": "Kamu adalah analis intelijen yang memberikan insight insiden berdasarkan data yang diberikan."},
             {"role": "user",
-             "content": f"Berikan ringkasan dari data berikut:\n{md_mitigation}"}
+             "content": f"Berikan ringkasan dari data berikut:\n{md_mitigation}. buat dalam bentuk 1 paragraf text"}
         ],
         temperature=0.5
     )
 
-    doc = DocxTemplate("./template/template-report.docx")
+    doc = DocxTemplate("./app/template/template-report.docx")
     context = {
         'title': title if title else 'Laporan',
         'kategori': category,
         'generated_date_start': start_date,
         'generated_date_end': end_date,
         'total_report': count_df,
-        'chart_tren_laporan': InlineImage(doc, investigation_img_stream, width=Mm(120)),
+        'chart_tren_laporan': InlineImage(doc, investigation_img_stream, width=Mm(160)),
         'deskripsi_tren_laporan': response_trend.choices[0].message.content,
-        'chart_laporan_lokasi': InlineImage(doc, office_img_stream, width=Mm(120)),
+        'chart_laporan_lokasi': InlineImage(doc, office_img_stream, width=Mm(160)),
         'deskripsi_laporan_perlokasi': response_office.choices[0].message.content,
         'rangkuman_laporan': response_summary.choices[0].message.content,
-        'chart_top_kontributor': InlineImage(doc, contributor_img_stream, width=Mm(120)),
+        'chart_top_kontributor': InlineImage(doc, contributor_img_stream, width=Mm(160)),
         'deskripsi_top_kontributor': response_contributor.choices[0].message.content,
-        'chart_tren_kontributor': InlineImage(doc, trend_contrbutor_img_stream, width=Mm(120)),
+        'chart_tren_kontributor': InlineImage(doc, trend_contrbutor_img_stream, width=Mm(160)),
         'deskripsi_tren_kontributor': response_trend_contributor.choices[0].message.content,
         'total_online_news': count_online_news_df,
         'rangkuman_online_news': response_online_news.choices[0].message.content,
         'mitigasi_saran_online_news': response_mitigation.choices[0].message.content
     }
     doc.render(context)
-    doc.save(f"./report/report-{category}-{start_date}-{end_date}.docx")
+    filename = f'report-{category}-{start_date}-{end_date}.docx'
+    doc.save(f"./app/report/{filename}")
+    stmt = (
+        insert(report_metadata)
+        .values(
+            title=filename,
+            category=category,
+            url=f"https://polda-be.laice.tech/{filename}",
+        )
+        .returning(report_metadata.c.id)
+    )
+
+    inserted_id = await database.fetch_val(stmt)
+    return {
+        'id': inserted_id,
+        'title': filename
+    }
 
 
-async def download_report(id: str):
-    pass
+async def get_download_report(id: int, url: str):
+    query = select(report_metadata).where(
+        and_(
+            report_metadata.c.id == id,
+        )
+    )
+    report_data = await database.fetch_one(query)
+    url_data = report_data['url']
+    if url_data != url:
+        return {}
+    filename = report_data["title"]
+    return FileResponse(
+        path=f'./app/report/{filename}',
+        filename=filename,
+        media_type='application/octet-stream'
+    )
