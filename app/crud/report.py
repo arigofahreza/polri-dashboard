@@ -318,3 +318,27 @@ async def get_download_report(id: int, url: str):
         filename=filename,
         media_type='application/octet-stream'
     )
+
+
+async def get_all_document(page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+
+    query = (
+        select(report_metadata)
+        .order_by(report_metadata.c.id)
+        .limit(limit)
+        .offset(offset)
+    )
+
+    results = await database.fetch_all(query)
+
+    count_query = select(func.count()).select_from(report_metadata)
+    total = await database.fetch_val(count_query)
+
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "total_page": (total + limit - 1) // limit,
+        "data": [dict(row) for row in results]
+    }
